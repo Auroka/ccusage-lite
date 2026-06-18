@@ -55,9 +55,9 @@ $dest = "$env:USERPROFILE\.local\bin"
 
 ---
 
-## 2. 接入状态栏（可选）
+## 2. 接入状态栏（默认安装）
 
-在 Claude Code 的 `settings.json` 加（路径换成 `<REPO>`，Windows 也用正斜杠 `/`）：
+把下面的 `statusLine` 字段**合并进** Claude Code 的用户配置 `~/.claude/settings.json`（Windows：`%USERPROFILE%\.claude\settings.json`）。路径换成 `<REPO>`，Windows 也用正斜杠 `/`：
 
 ```json
 {
@@ -68,7 +68,10 @@ $dest = "$env:USERPROFILE\.local\bin"
 }
 ```
 
-状态栏出任何错都会降级成一行 `🤖 Claude`，不会崩。
+注意：
+- **是合并不是覆盖**——`settings.json` 多半已有其他配置，只新增/替换 `statusLine` 这一个键，保留其余内容（文件不存在才整份新建）。已有别的 statusLine 要先和用户确认再替换。
+- 改完**重启 Claude Code** 状态栏才生效。
+- 状态栏出任何错都会降级成一行 `🤖 Claude`，不会崩、不影响 Claude Code 使用。
 
 ---
 
