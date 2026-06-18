@@ -62,6 +62,46 @@ function approx(a, b) { return Math.abs(a - b) < 1e-6; }
   ok('完全未知模型无价', ccu.priceFor('gpt-4') === null);
 })();
 
+// 4b. 带日期/代理后缀的精确定价：最长前缀匹配，不得退到通用 opus 低估价
+(function () {
+  // 旧 Opus 4/4.1 是 $15/$75，带日期后缀不能被当成新 Opus 的 $5/$25
+  ok('opus-4-1 带后缀仍 $15', ccu.priceFor('claude-opus-4-1-20250805').input === 15);
+  ok('opus-4 带后缀仍 $15', ccu.priceFor('claude-opus-4-20250514').input === 15);
+  // 新 Opus 4.8 带后缀仍 $5；不能被更短的 claude-opus-4 抢走
+  ok('opus-4-8 带后缀仍 $5', ccu.priceFor('claude-opus-4-8-20260601').input === 5);
+})();
+
+// 4b2. provider 前缀（anthropic/、openrouter/）也要剥离后做最长前缀匹配
+(function () {
+  ok('anthropic 前缀 opus-4-1 仍 $15', ccu.priceFor('anthropic/claude-opus-4-1-20250805').input === 15);
+  ok('openrouter 前缀 opus-4 仍 $15', ccu.priceFor('openrouter/claude-opus-4-20250514').input === 15);
+  ok('anthropic 前缀 opus-4-8 仍 $5', ccu.priceFor('anthropic/claude-opus-4-8-20260601').input === 5);
+  ok('anthropic 前缀 sonnet-4-6 仍 $3', ccu.priceFor('anthropic/claude-sonnet-4-6-20260601').input === 3);
+  ok('完全未知模型仍无价', ccu.priceFor('openrouter/gpt-4') === null);
+  // Claude Code 开 1M 时 model.id 带 [1m] 标记，需剥离后命中
+  ok('opus-4-8[1m] 命中 $5', ccu.priceFor('claude-opus-4-8[1m]').input === 5);
+})();
+
+// 4c. 上下文窗口：按模型 id 命中 contextWindows，未命中回落兜底
+(function () {
+  ok('opus-4-8 命中 1M', ccu.contextWindowFor('claude-opus-4-8') === 1000000);
+  ok('opus-4-8 带后缀命中 1M', ccu.contextWindowFor('claude-opus-4-8-20260601') === 1000000);
+  ok('sonnet-4-6 命中 1M', ccu.contextWindowFor('claude-sonnet-4-6') === 1000000);
+  // provider 前缀也要剥离后命中
+  ok('anthropic 前缀 sonnet-4-6 命中 1M', ccu.contextWindowFor('anthropic/claude-sonnet-4-6-20260601') === 1000000);
+  ok('anthropic 前缀 opus-4-8 命中 1M', ccu.contextWindowFor('anthropic/claude-opus-4-8-20260601') === 1000000);
+  // Claude Code 实测：开 1M 时 model.id 带 [1m] 标记，剥离后才命中（否则 394k/200k=197% 这种 bug）
+  ok('opus-4-8[1m] 命中 1M', ccu.contextWindowFor('claude-opus-4-8[1m]') === 1000000);
+  ok('anthropic 前缀 + [1m] 命中 1M', ccu.contextWindowFor('anthropic/claude-opus-4-8[1m]') === 1000000);
+  // 4.5 不在官方 1M long context 列表，回落兜底 200000
+  ok('opus-4-5 非 1M 回落兜底', ccu.contextWindowFor('claude-opus-4-5') === 200000);
+  ok('sonnet-4-5 非 1M 回落兜底', ccu.contextWindowFor('claude-sonnet-4-5') === 200000);
+  // haiku-4-5、未知、带前缀的未知都回落兜底
+  ok('haiku-4-5 回落兜底', ccu.contextWindowFor('claude-haiku-4-5') === 200000);
+  ok('anthropic 前缀 haiku 回落兜底', ccu.contextWindowFor('anthropic/claude-haiku-4-5') === 200000);
+  ok('未知模型回落兜底', ccu.contextWindowFor('gpt-4') === 200000);
+})();
+
 // 5. localDay 解析与坏值
 (function () {
   ok('localDay 解析 ISO', /^\d{4}-\d{2}-\d{2}$/.test(ccu.localDay('2026-06-17T03:00:00.000Z')));
@@ -103,8 +143,29 @@ function approx(a, b) { return Math.abs(a - b) < 1e-6; }
   ok('dayKeyOffset 越早越小', ccu.dayKeyOffset(6) < ccu.dayKeyOffset(0));
 })();
 
+// 8b. node14 禁用语法扫描：源码不得出现 node14 不支持的 API/语法
+(function () {
+  var src = fs.readFileSync(path.join(__dirname, '..', 'bin', 'ccu.js'), 'utf8');
+  var banned = [
+    { re: /\bstructuredClone\s*\(/, name: 'structuredClone' },
+    { re: /\bObject\.hasOwn\s*\(/, name: 'Object.hasOwn' },
+    { re: /\.at\s*\(/, name: 'Array.prototype.at' },
+    { re: /\.findLast\s*\(/, name: 'findLast' },
+    { re: /[^.\w]fetch\s*\(/, name: 'fetch' }
+  ];
+  var hit = null;
+  for (var i = 0; i < banned.length; i++) { if (banned[i].re.test(src)) { hit = banned[i].name; break; } }
+  ok('node14 禁用语法未出现' + (hit ? '（命中 ' + hit + '）' : ''), hit === null);
+})();
+
+// ---- 异步测试协调：所有 promise 完成后再打印汇总 ----
+var pending = 0;
+function asyncStart() { pending++; }
+function asyncDone() { pending--; if (pending === 0) finish(); }
+
 // 9. buildAgg sinceDay 区间过滤：只统计 >= sinceDay 的记录
 (function () {
+  asyncStart();
   var tmp = path.join(os.tmpdir(), 'ccu-test-range-' + process.pid + '.jsonl');
   function rec(day, id, inTok) {
     return JSON.stringify({
@@ -119,7 +180,29 @@ function approx(a, b) { return Math.abs(a - b) < 1e-6; }
   ccu.buildAgg([tmp], { sinceDay: ccu.dayKeyOffset(6) }).then(function (agg) {
     ok('sinceDay 只计区间内记录', agg.totals.input === 100 && agg.count === 1);
     try { fs.unlinkSync(tmp); } catch (e) {}
-    finish();
+    asyncDone();
+  });
+})();
+
+// 10. 跨日 session：同文件同 session 含昨天+今天记录，day 过滤后只计今天
+(function () {
+  asyncStart();
+  var tmp = path.join(os.tmpdir(), 'ccu-test-session-' + process.pid + '.jsonl');
+  function rec(day, id, inTok) {
+    return JSON.stringify({
+      requestId: id, sessionId: 'sess-x', cwd: 'C:\\proj', timestamp: day + 'T12:00:00.000Z',
+      message: { id: id, model: 'claude-opus-4-8', usage: { input_tokens: inTok, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }
+    });
+  }
+  var today = ccu.dayKeyOffset(0);
+  var yesterday = ccu.dayKeyOffset(1);
+  fs.writeFileSync(tmp, rec(yesterday, 'r-y', 500) + '\n' + rec(today, 'r-t', 100) + '\n', 'utf8');
+  // 模拟 cmdSession 的口径：mtime 文件被选中，但只统计今日记录
+  ccu.buildAgg([tmp], { day: today }).then(function (agg) {
+    var s = agg.bySession['sess-x'];
+    ok('跨日 session 只计今天', !!s && s.acc.input === 100 && agg.totals.input === 100 && agg.count === 1);
+    try { fs.unlinkSync(tmp); } catch (e) {}
+    asyncDone();
   });
 })();
 

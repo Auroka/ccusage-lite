@@ -1,28 +1,12 @@
 # 安装指南（给 AI / agent）
 
-本文件供 AI / agent 阅读：按用户的操作系统执行对应步骤，即可把 `ccu` 命令装到用户电脑。命令可直接复制运行，把 `<REPO>` 替换成实际的克隆路径。
+本文件供 AI / agent 阅读：按用户的操作系统执行对应步骤，即可把 `ccu` 命令装到用户电脑。命令可直接复制运行，把 `<REPO>` 替换成本项目根目录的**绝对路径**（即本文件所在目录，例如 macOS `/Users/me/tools/ccusage-lite`、Windows `C:\Users\me\tools\ccusage-lite`）。
 
 **前置**：用户已装 Node.js（终端能 `node -v` 输出版本即可，任意版本，含 node14+）。
 
 ---
 
-## 1. 克隆仓库
-
-选一个目录克隆（示例放 `~/tools`，可自定）：
-
-```bash
-git clone git@github.com:Auroka/ccusage-lite.git
-# 没有 SSH 权限就用 HTTPS：
-# git clone https://github.com/Auroka/ccusage-lite.git
-```
-
-记下克隆后的**绝对路径**作为 `<REPO>`，例如：
-- macOS：`/Users/me/tools/ccusage-lite`
-- Windows：`C:\Users\me\tools\ccusage-lite`
-
----
-
-## 2. 建 `ccu` 命令（按系统二选一）
+## 1. 建 `ccu` 命令（按系统二选一）
 
 ### macOS / Linux
 
@@ -46,9 +30,9 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 
 需要两个 shim，放进一个**已在 Windows PATH 上**的目录（推荐 `%USERPROFILE%\.local\bin`，没有就建它并加进用户 PATH）：
 - `ccu.cmd` —— 给 PowerShell / cmd 用，**必须 CRLF 行尾**；
-- `ccu`（无扩展名）—— 给 Git Bash / WSL 用，这些 shell 不认 `.cmd`。
+- `ccu`（无扩展名）—— 给 Git Bash 用，它不认 `.cmd`。
 
-**用 Git Bash 一键生成**（装 Git 时自带 Git Bash，行尾自动正确）。把 `repo` / `win_repo` / `dest` 换成实际值：
+**用 Git Bash 一键生成**（装 Git 时自带 Git Bash，行尾自动正确；下面用的是 Git Bash 的 `/c/...` 路径，不是 WSL 的 `/mnt/c/...`）。把 `repo` / `win_repo` / `dest` 换成实际值：
 
 ```bash
 repo="/c/Users/me/tools/ccusage-lite"          # Git Bash 风格路径
@@ -71,7 +55,7 @@ $dest = "$env:USERPROFILE\.local\bin"
 
 ---
 
-## 3. 接入状态栏（可选）
+## 2. 接入状态栏（可选）
 
 在 Claude Code 的 `settings.json` 加（路径换成 `<REPO>`，Windows 也用正斜杠 `/`）：
 
@@ -88,7 +72,7 @@ $dest = "$env:USERPROFILE\.local\bin"
 
 ---
 
-## 4. 验证
+## 3. 验证
 
 **新开一个终端**运行：
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "官方现价，单位：美元/百万 token。仅作参考；实际以代理结算为准。Opus/Sonnet 4.x 均为 1M 上下文、标准定价、无长上下文溢价。cacheWrite 取 5m 写入价(=input×1.25)，cacheRead=input×0.1。",
+  "_comment": "官方现价（截至 2026-06，静态表，需定期对照 Anthropic 官方 pricing/models 文档核对），单位：美元/百万 token。仅作参考；实际以代理结算为准。标准定价、无长上下文溢价。匹配口径：精确 key → 最长前缀（容忍日期/代理后缀，如 claude-opus-4-1-20250805 命中 claude-opus-4-1）→ 系列子串 fallback（opus/sonnet/haiku）。cacheWrite 取 5m 写入价(=input×1.25)，cacheRead=input×0.1。",
   "models": {
     "claude-fable-5":    { "input": 10, "output": 50, "cacheWrite": 12.5, "cacheRead": 1.0 },
     "claude-opus-4-8":   { "input": 5,  "output": 25, "cacheWrite": 6.25, "cacheRead": 0.5 },

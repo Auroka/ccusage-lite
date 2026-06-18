@@ -8,7 +8,7 @@
 
 完整步骤见 **[INSTALL.md](INSTALL.md)**，已按 Windows / macOS 分开写好，可直接照做。
 
-> **给 AI / agent**：用户让你安装本工具时，打开 [INSTALL.md](INSTALL.md)，按其中对应操作系统的步骤执行即可（克隆 → 建命令 → 可选接入状态栏 → 验证）。无需猜测，文档里命令可直接复制运行。
+> **给 AI / agent**：用户让你安装本工具时，打开 [INSTALL.md](INSTALL.md)，按其中对应操作系统的步骤执行即可（建命令 → 可选接入状态栏 → 验证）。无需猜测，文档里命令可直接复制运行。
 
 ## 用法
 
@@ -66,11 +66,14 @@ Claude 近一周用量  2026-06-12 ~ 2026-06-18   请求数 1047
 | 字段 | 含义 | 默认 |
 | --- | --- | --- |
 | `multiplier` | 代理倍率。走第三方代理、按官方价 N 倍扣费就填 N，金额展示更接近真实账单；官方直连填 `1`。 | `2` |
-| `contextWindow` | 模型上下文窗口，状态栏算占比用。Opus 1M 填 `1000000`，一般模型填 `200000`。 | `1000000` |
+| `contextWindow` | **兜底**上下文窗口，状态栏算占比用——当前模型没在 `contextWindows` 里命中时才用它。 | `200000` |
+| `contextWindows` | 按模型 id 指定 1M 窗口（状态栏据此算占比，匹配时会自动剥离 `anthropic/` 这类 provider 前缀）。1M 列表以[官方 long context 文档](https://platform.claude.com/docs/en/about-claude/pricing)为准，是静态表、需定期核对；其余模型回落 `contextWindow`。 | 见文件 |
+
+> 状态栏占比只是估算：它按 `contextWindows`/`contextWindow` 配置的分母算，不代表模型真实剩余上下文。换了不在表里的模型，自行补一条或调 `contextWindow`。
 
 ## 关于金额与数据
 
-- 定价用官方现价（Opus 4.x = $5/$25、Sonnet 4.6 = $3/$15、Haiku 4.5 = $1/$5 每百万 token），再乘 `multiplier`，所以标注"参考"。
+- 定价用官方现价（Opus 4.5+ = $5/$25、Sonnet 4.x = $3/$15、Haiku 4.5 = $1/$5 每百万 token），再乘 `multiplier`，所以标注"参考"。定价表是静态内置的，会随官方调价而过时，需定期核对。
 - token 分四类统计；同一请求被 resume/retry 重复记录的会自动去重，不重复计费。
 - 数据来自 `~/.claude/projects/` 下的 `.jsonl`，全程本机离线计算，**不联网、不上传任何数据**。
 

@@ -30,14 +30,64 @@ var MULTIPLIER = CFG.multiplier;
 var CONTEXT_WINDOW = CFG.contextWindow;
 
 function loadConfig() {
-  var cfg = { multiplier: 1, contextWindow: 200000 };
+  // contextWindow 是兜底估算分母（默认 200000）；contextWindows 按模型 id 精确覆盖
+  // （如 1M 上下文的 opus 4.5+/sonnet 4.5+），不保证自动识别所有模型。
+  var cfg = { multiplier: 1, contextWindow: 200000, contextWindows: {} };
   try {
     var p = path.join(__dirname, '..', 'config.json');
     var c = JSON.parse(fs.readFileSync(p, 'utf8'));
     if (c && typeof c.multiplier === 'number' && isFinite(c.multiplier) && c.multiplier > 0) cfg.multiplier = c.multiplier;
     if (c && typeof c.contextWindow === 'number' && isFinite(c.contextWindow) && c.contextWindow > 0) cfg.contextWindow = c.contextWindow;
+    if (c && c.contextWindows && typeof c.contextWindows === 'object') cfg.contextWindows = c.contextWindows;
   } catch (e) {}
   return cfg;
+}
+
+// 把模型 id 拆成候选，供前缀匹配逐个试。保留原串作 fallback。node14 兼容。
+// 处理两类污染：
+//   1) provider 前缀：anthropic/claude-opus-4-1-... → 也试 claude-opus-4-1-...
+//   2) 上下文/变体标记：Claude Code 在开 1M 时 model.id 形如 claude-opus-4-8[1m]，
+//      去掉 [..] 才能命中 contextWindows / pricing 的裸 key。
+function modelCandidates(model) {
+  var raw = String(model || '');
+  var seen = Object.create(null);
+  var out = [];
+  function add(s) {
+    if (s && !seen[s]) { seen[s] = true; out.push(s); }
+    // 同步加一份去掉 provider 前缀的最后一段
+    var slash = s ? s.lastIndexOf('/') : -1;
+    if (slash >= 0 && slash < s.length - 1) {
+      var tail = s.slice(slash + 1);
+      if (tail && !seen[tail]) { seen[tail] = true; out.push(tail); }
+    }
+  }
+  add(raw);
+  var noBracket = raw.replace(/\[[^\]]*\]/g, '');  // 去掉 [1m] 这类标记
+  if (noBracket !== raw) add(noBracket);
+  return out;
+}
+
+// 在一张 key→值 的表里对模型 id 做最长前缀匹配（精确 key 或带后缀的 "key-" 前缀），
+// 跨所有候选选全局最长 key。未命中返回 null。priceFor / contextWindowFor 共用。
+function longestPrefixMatch(table, model) {
+  var cands = modelCandidates(model);
+  var bestKey = null;
+  for (var c = 0; c < cands.length; c++) {
+    var m = cands[c];
+    for (var key in table) {
+      if (m === key || m.indexOf(key + '-') === 0) {
+        if (bestKey === null || key.length > bestKey.length) bestKey = key;
+      }
+    }
+  }
+  return bestKey === null ? null : table[bestKey];
+}
+
+// 按当前模型 id 取上下文窗口：最长前缀匹配（含 provider 前缀）→ 回落全局 contextWindow。
+// statusline 占比分母用，避免在非 1M 模型上把占比算偏。
+function contextWindowFor(modelId) {
+  var hit = longestPrefixMatch(CFG.contextWindows || {}, modelId);
+  return (typeof hit === 'number' && hit > 0) ? hit : CONTEXT_WINDOW;
 }
 
 // ---------- 数据发现层 ----------
@@ -199,8 +249,12 @@ function buildAgg(files, opts) {
 
 // ---------- 计价层 ----------
 function priceFor(model) {
-  var models = PRICING.models || {};
-  if (models[model]) return models[model];
+  // 最长前缀匹配（已含 provider 前缀剥离）：精确 key 或带日期/代理后缀的变体，
+  // 如 anthropic/claude-opus-4-1-20250805 命中 claude-opus-4-1，避免被更短的
+  // claude-opus-4 抢走、或退到通用 opus 低估价。
+  var hit = longestPrefixMatch(PRICING.models || {}, model);
+  if (hit) return hit;
+  // 仍未命中再按系列子串回退（原串小写）
   var fb = PRICING.fallback || {};
   var lc = String(model).toLowerCase();
   if (lc.indexOf('opus') >= 0 && fb.opus) return fb.opus;
@@ -373,9 +427,11 @@ function noteLine() {
 }
 
 // statusline 渲染（纯函数，便于测试）。显示当前上下文占用 + 花费
-function renderStatusline(model, ctxTokens, session, today) {
+// ctxWindow 省略时回落全局 CONTEXT_WINDOW（保持旧测试签名兼容）
+function renderStatusline(model, ctxTokens, session, today, ctxWindow) {
+  var W = (typeof ctxWindow === 'number' && ctxWindow > 0) ? ctxWindow : CONTEXT_WINDOW;
   return '🤖 ' + model +
-    ' │ 上下文 ' + fmtTok(ctxTokens) + ' (' + fmtPct(ctxTokens / CONTEXT_WINDOW) + ')' +
+    ' │ 上下文 ' + fmtTok(ctxTokens) + ' (' + fmtPct(ctxTokens / W) + ')' +
     ' │ 当前会话 ' + fmtUsd(session.cost * MULTIPLIER) + ' (参考)' +
     ' │ 今日 ' + fmtUsd(today.cost * MULTIPLIER) + ' (参考)';
 }
@@ -468,8 +524,11 @@ function printSessionTable(agg) {
 }
 
 function cmdSession() {
+  var day = todayKey();
   var files = filesSince(startOfTodayMs());
-  return buildAgg(files, {}).then(function (agg) {
+  // 必须按今日日期过滤：今天被追加过的 transcript 往往还含昨天及更早的记录，
+  // 不过滤会把旧日期 token 也算进"今日会话"，高估今日用量。
+  return buildAgg(files, { day: day }).then(function (agg) {
     print('Claude 会话用量（今日活跃）   会话数 ' + Object.keys(agg.bySession).length);
     printSessionTable(agg);
     print(noteLine());
@@ -489,13 +548,17 @@ function readStdin() {
 
 function cmdStatusline() {
   var model = 'Claude';
+  var modelId = '';
   var transcript = '';
   try {
     var raw = readStdin();
     if (raw) {
       var j = JSON.parse(raw);
-      if (j.model && j.model.display_name) model = j.model.display_name;
-      else if (j.model && j.model.id) model = j.model.id;
+      if (j.model) {
+        if (j.model.display_name) model = j.model.display_name;
+        else if (j.model.id) model = j.model.id;
+        modelId = j.model.id || '';   // 用 id 查上下文窗口（display_name 不稳定）
+      }
       transcript = j.transcript_path || '';
     }
   } catch (e) {}
@@ -512,8 +575,9 @@ function cmdStatusline() {
   // 当前会话上下文占用
   var ctxP = transcript ? sessionContext(transcript) : Promise.resolve(0);
 
+  var win = contextWindowFor(modelId);
   return Promise.all([ctxP, sessionP, todayP]).then(function (r) {
-    process.stdout.write(renderStatusline(model, r[0], r[1], r[2]) + '\n');
+    process.stdout.write(renderStatusline(model, r[0], r[1], r[2], win) + '\n');
   });
 }
 
@@ -573,5 +637,6 @@ module.exports = {
   dayKeyOffset: dayKeyOffset,
   fmtInt: fmtInt,
   fmtMoney: fmtMoney,
-  dispWidth: dispWidth
+  dispWidth: dispWidth,
+  contextWindowFor: contextWindowFor
 };

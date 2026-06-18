@@ -1,5 +1,12 @@
 {
-  "_comment": "本地覆盖配置，改这里即可，无需动代码。multiplier=代理相对官方定价的倍率（花费估算乘以它）；contextWindow=模型上下文窗口大小（状态栏算占比用，opus[1m]=1000000）。",
+  "_comment": "本地覆盖配置，改这里即可，无需动代码。multiplier=代理相对官方定价的倍率（花费估算乘以它）；contextWindow=兜底上下文窗口（状态栏算占比用，未在 contextWindows 命中时使用）；contextWindows=按模型 id 精确指定 1M 窗口，其余回落 contextWindow=200000。1M 列表以官方 long context 文档为准（https://platform.claude.com/docs/en/about-claude/pricing），当前为 Fable 5 / Opus 4.6-4.8 / Sonnet 4.6，需定期核对。",
   "multiplier": 2,
-  "contextWindow": 1000000
+  "contextWindow": 200000,
+  "contextWindows": {
+    "claude-fable-5": 1000000,
+    "claude-opus-4-8": 1000000,
+    "claude-opus-4-7": 1000000,
+    "claude-opus-4-6": 1000000,
+    "claude-sonnet-4-6": 1000000
+  }
 }
