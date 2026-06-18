@@ -1,0 +1,5 @@
+{
+  "_comment": "本地覆盖配置，改这里即可，无需动代码。multiplier=代理相对官方定价的倍率（花费估算乘以它）；contextWindow=模型上下文窗口大小（状态栏算占比用，opus[1m]=1000000）。",
+  "multiplier": 2,
+  "contextWindow": 1000000
+}

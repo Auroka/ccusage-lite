@@ -1,0 +1,10 @@
+# 会话总结文档（本地用，不入库）
+.summaryDoc/
+
+# 依赖与杂项
+node_modules/
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
